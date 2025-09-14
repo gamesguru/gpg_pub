@@ -17,7 +17,7 @@ endif
 # ~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
 .PHONY: list
 list:	## List the keys in this repository
-	gpg --list-key --keyid-format LONG $(shell find keys/ -name *.asc -printf "%f\n"| cut -d"." -f1)
+	gpg --list-key --keyid-format LONG $(shell find keys/ -name *.asc -printf "%f\n" | xargs -I % basename % .asc)
 
 
 # ~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
