@@ -11,18 +11,17 @@ it will have a retired date.
 Keys appear in order of descending importance (frequency of use).
 Retired keys will be moved to the bottom.
 
-See ``./summary_of_keys.csv`` for detail on all keys and retire dates.
+Run ``make csv`` to generate ``summary_of_keys.csv`` with details on all keys.
 
 NOTE: You may be prompted to sign with an existing key.
 
-If you don't have one, create one with ``gpg2 --expert --full-gen-key``.
+If you don't have one, create one with ``gpg --expert --full-gen-key``.
 
-In the  ``scripts/`` folder, you can also use
-``gpg-generate-rsa4096-encryption.sh`` or
-``gpg-generate-ed25519-signing.sh``.
+In the ``scripts/legacy/`` folder, you can also use
+``gpg-generate-ed-sce-keypair.sh`` (Ed25519 signing + Cv25519 encryption).
 
 Save your main key as ultimately trusted (5) with
-``gpg2 --edit-key <key_id>``, ``trust``, ``5``, ``save``.
+``gpg --edit-key <key_id>``, ``trust``, ``5``, ``save``.
 
 Importing
 =========
@@ -99,17 +98,16 @@ Public keys can be easily removed from your keyring.
 Generating Your own PGP keys
 ----------------------------
 
-I like to start my work keys with a number, and my personal keys
-with a letter.  Automating the generation process can help take
-the labor out of ensuring such a standard.
+All keys use Ed25519 for signing and Cv25519 for encryption.
+RSA is no longer recommended for new keys.
 
 Run the below script(s) for generating key(s).
 
 .. code-block:: text
 
-    scripts/
-    ├── gpg-generate-ed25519-signing.sh
-    ├── gpg-generate-rsa4096-encryption.sh
+    scripts/legacy/
+    ├── gpg-generate-ed-sce-keypair.sh   # Ed25519+Cv25519 key pair
+    ├── gpg-generate-rsa4096-encryption.sh  # (legacy)
 
 **NOTE:** Remove the ``%no-protection`` comment for faster key generation
 (for testing purposes only, do not use insecure keys in production).

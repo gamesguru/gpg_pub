@@ -6,8 +6,17 @@
 
 
 # our files
-tmp/
+# tmp/
 batch-cmds
 *.pub
 output.log
 
+# Python
+__pycache__/
+*.py[cod]
+*$py.class
+.venv/
+env/
+venv/
+.pytest_cache/
+.mypy_cache/
