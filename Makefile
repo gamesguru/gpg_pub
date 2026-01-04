@@ -144,21 +144,16 @@ export:	##H @GPG Export an updated public/secret key pair
 	# Secret key is done in separate step, (wrong password otherwise overwrites with empty secret key file)
 	mv tmp/${KEY}.asc ${GPG_SEC_KEY}
 
-.PHONY: import-secret
-import-secret:	##H @GPG Import a secret key (to edit)
+.PHONY: import
+import:	##H @GPG Import a public/secret key pair (to edit)
 	# Check KEY is set
 	test -n "${KEY}"
-	# Check ${KEY} was found in ${GPG_SEC_DIR}"
+	# Check ${KEY} was found in both directories
+	test -n "${GPG_PUB_KEY}"
 	test -n "${GPG_SEC_KEY}"
-	# Import ${KEY} (SECRET KEY)
+	# Import ${KEY} (PUBLIC & SECRET KEYS)
+	gpg --import ${GPG_PUB_KEY}
 	gpg --import ${GPG_SEC_KEY}
-
-.PHONY: delete-secret
-delete-secret:	##H @GPG Delete a retired secret key
-	# Check KEY is set
-	test -n "${KEY}"
-	# Delete ${KEY} (SECRET KEY)
-	gpg --delete-secret-and-public-keys ${KEY}
 
 # ~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
 # Test and extras
@@ -173,12 +168,6 @@ test: 	##H @Dev Test local keys and GitHub keys, show git log sigs
 	curl https://github.com/gamesguru.gpg | gpg --import --dry-run
 	@$(call print_success,Check complete.)
 	git --no-pager log -n 20 --branches --graph --abbrev-commit --show-signature
-
-.PHONY: check/parity
-check/parity: _venv ##H @Dev Verify parity between local keys and GitHub keys
-	@$(call print_info,Verifying GitHub key parity...)
-	$(GPG_MANAGER) verify-parity $(ARGS)
-	@$(call print_success,Parity verified.)
 
 .PHONY: sync
 sync: _venv ##H @Dev Check parity with GitHub and Secret Store

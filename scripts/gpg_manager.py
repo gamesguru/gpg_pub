@@ -11,6 +11,7 @@ import logging
 import os
 import shutil
 import subprocess
+import sys
 import tempfile
 import urllib.request
 from typing import List, Optional
@@ -228,8 +229,6 @@ def cmd_verify_parity(secret_dir: str):
 
                 # 1. Download GitHub key
                 gh_key_path = os.path.join(tmpdirname, f"{name}.gpg")
-                if dry_run:
-                    logger.info(f"[DRY-RUN] Downloading {url} for comparison...")
 
                 # Always download to temp for comparison
                 with urllib.request.urlopen(url) as response, open(
