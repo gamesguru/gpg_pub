@@ -177,14 +177,52 @@ check/only-self-sigs: ##H @Dev Test local keys and GitHub keys
 	curl https://github.com/gamesguru.gpg | gpg --import --dry-run
 	@$(call print_success,Check complete.)
 
+.PHONY: check/parity
+check/parity: ##H @Dev Verify parity between local keys and GitHub keys
+	@$(call print_info,Verifying GitHub key parity...)
+	$(GPG_MANAGER) verify-parity $(ARGS)
+	@$(call print_success,Parity verified.)
+
+.PHONY: deps
+deps:	##H @Dev Install dev dependencies
+	@$(call print_info,Installing dependencies...)
+	pip install -r requirements-dev.txt
+	@$(call print_success,Dependencies installed.)
+
+.PHONY: format
+format:	##H @Dev Format code with Black and Ruff
+	@$(call print_info,Formatting code...)
+	black .
+	ruff check --fix .
+	@$(call print_success,Formatting complete.)
+
 .PHONY: lint
-lint:	##H @Dev Lint scripts
-	@$(call print_info,Linting shell scripts...)
-	# shellcheck scripts/*.sh  # No shell scripts left!
-	@$(call print_info,Linting python scripts...)
-	python3 -m py_compile $(GPG_MANAGER)
-	@if command -v pylint >/dev/null 2>&1; then pylint $(GPG_MANAGER); else $(call print_warn,pylint not installed); fi
-	@$(call print_success,Lint complete.)
+lint:	##H @Dev Lint scripts (Ruff & Black check)
+	@$(call print_info,Linting code...)
+	@# Shellcheck
+	@if command -v shellcheck >/dev/null; then \
+		echo "Running shellcheck..."; \
+		shellcheck scripts/*.sh || true; \
+	else \
+		echo "shellcheck not found, skipping."; \
+	fi
+	@# Black check
+	@if command -v black >/dev/null; then \
+		echo "Checking black formatting..."; \
+		black --check . || exit 1; \
+	else \
+		echo "black not found. Run 'make deps'"; \
+		exit 1; \
+	fi
+	@# Ruff check
+	@if command -v ruff >/dev/null; then \
+		echo "Running ruff..."; \
+		ruff check . || exit 1; \
+	else \
+		echo "ruff not found. Run 'make deps'"; \
+		exit 1; \
+	fi
+	@$(call print_success,Linting complete.)
 
 
 .PHONY: csv

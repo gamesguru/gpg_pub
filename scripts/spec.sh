@@ -20,7 +20,7 @@ function check_matchnumber() {
 
 # Main loop
 while true; do
-	KEY_OUTPUT=$(./gpg-generate-ed-sce-keypair.sh)
+	KEY_OUTPUT=$(./legacy/gpg-generate-ed-sce-keypair.sh)
 	sleep 0.1
 
 	# SPEC: All four (key_id & fpr, and subkey_id & subkey_fpr) start with a given letter, i.e., B
@@ -36,12 +36,18 @@ while true; do
 	# -- END SPEC --
 
 	# SPEC: Only one key (fpr + id) to compare
-	# L=B
+	L=B
 	MATCH_1="$(echo "$KEY_OUTPUT" | grep "ed25519/$L" | awk '{print $2}')"
-	MATCH_2="$(echo "$KEY_OUTPUT" | grep "^      $L[A-Z,0-9]\{39\}$" | cut -c 7-16)"
-	set -x
-	check_matchnumber 2 "$MATCH_1" "$MATCH_2"
-	set +x
+	# The line with full fingerprint starts with spaces, then the hex string.
+	# Example:       A446DAEF9AEE656EF1F2D904D0260560942BE3D2
+	# Regex: search for spaces, then L, then 39 hex chars.
+	MATCH_2="$(echo "$KEY_OUTPUT" | grep -E "^\s+$L[A-F0-9]{39}$" | cut -c 7-16)"
+	
+	if [ -n "$MATCH_1" ] || [ -n "$MATCH_2" ]; then
+		set -x
+		check_matchnumber 2 "$MATCH_1" "$MATCH_2"
+		set +x
+	fi
 	# -- END SPEC --
 
 done
