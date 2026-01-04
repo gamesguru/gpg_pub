@@ -7,14 +7,16 @@ Replaces legacy shell scripts: _import.sh, _sign.sh, _delete.sh.
 """
 
 import argparse
+import logging
 import os
+import shutil
 import subprocess
 import sys
-import logging
+import tempfile
+import urllib.request
 from typing import List, Optional
 
 
-# Configure logging
 class Colors:
     HEADER = "\033[95m"
     OKBLUE = "\033[94m"
@@ -136,13 +138,6 @@ def cmd_delete(keys: List[str], dry_run: bool):
             logger.warning(
                 f"{Colors.WARNING}Skipping {key_file}: could not extract fingerprint.{Colors.ENDC}"
             )
-
-
-import tempfile
-import shutil
-import urllib.request
-
-# ... (logging setup) ...
 
 
 def get_signatures(key_file: str) -> List[str]:

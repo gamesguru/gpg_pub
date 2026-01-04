@@ -3,7 +3,7 @@ SHELL:=/bin/bash
 .SHELLFLAGS = -ec
 
 # Scripts
-GPG_MANAGER := ./scripts/gpg_manager.py
+GPG_MANAGER := $(PYTHON) ./scripts/gpg_manager.py
 # Optional arguments passed to GPG Manager (e.g. make uninstall ARGS="--dry-run")
 ARGS ?=
 
@@ -63,8 +63,8 @@ vars:	##H @General Debug: Print project variables
 		) \
 	)
 
-.PHONY: list
-list:	##H @General List the keys in this repository
+.PHONY: keys
+keys:	##H @General List the keys in this repository
 	gpg --list-key --keyid-format LONG $(shell find keys/ -name *.asc -printf "%f\n" | xargs -I % basename % .asc)
 
 # ~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
@@ -72,7 +72,7 @@ list:	##H @General List the keys in this repository
 # ~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
 
 .PHONY: install
-install:	##H @GPG Import my current signing keys
+install: _venv	##H @GPG Import my current signing keys
 	@$(call print_info,Importing current keys...)
 	$(GPG_MANAGER) import keys/active/personal keys/active/work $(ARGS)
 	@$(call print_info,Importing deprecated keys...)
@@ -80,19 +80,19 @@ install:	##H @GPG Import my current signing keys
 	@$(call print_success,Install complete.)
 
 .PHONY: retired
-retired:	##H @GPG Import my retired signing keys
+retired: _venv	##H @GPG Import my retired signing keys
 	@$(call print_info,Importing retired keys...)
 	$(GPG_MANAGER) import keys/retired/personal keys/retired/work $(ARGS)
 	@$(call print_success,Retired keys imported.)
 
 .PHONY: sign
-sign:	##H @GPG Locally sign my keys
+sign: _venv	##H @GPG Locally sign my keys
 	@$(call print_info,Signing all keys...)
 	$(GPG_MANAGER) sign keys/active keys/deprecated keys/retired $(ARGS)
 	@$(call print_success,Signing complete.)
 
 .PHONY: uninstall
-uninstall:	##H @GPG Remove signing keys
+uninstall: _venv	##H @GPG Remove signing keys
 	@$(call print_info,Removing all keys...)
 	$(GPG_MANAGER) delete keys/active keys/deprecated keys/retired $(ARGS)
 	@$(call print_success,Uninstall complete.)
@@ -148,7 +148,7 @@ export:	##H @GPG Export an updated public/secret key pair
 import-secret:	##H @GPG Import a secret key (to edit)
 	# Check KEY is set
 	test -n "${KEY}"
-	# Check ${KEY} was found in ${GPG_SEC_DIR}
+	# Check ${KEY} was found in ${GPG_SEC_DIR}"
 	test -n "${GPG_SEC_KEY}"
 	# Import ${KEY} (SECRET KEY)
 	gpg --import ${GPG_SEC_KEY}
@@ -178,50 +178,46 @@ check/only-self-sigs: ##H @Dev Test local keys and GitHub keys
 	@$(call print_success,Check complete.)
 
 .PHONY: check/parity
-check/parity: ##H @Dev Verify parity between local keys and GitHub keys
+check/parity: _venv ##H @Dev Verify parity between local keys and GitHub keys
 	@$(call print_info,Verifying GitHub key parity...)
 	$(GPG_MANAGER) verify-parity $(ARGS)
 	@$(call print_success,Parity verified.)
 
+# Virtual Environment
+VENV := .venv
+PYTHON := $(VENV)/bin/python3
+PIP := $(VENV)/bin/pip
+
+.PHONY: _venv
+_venv:
+	@test -d $(VENV) || (echo "Virtual environment not found. Run 'make deps'." && exit 1)
+
 .PHONY: deps
 deps:	##H @Dev Install dev dependencies
 	@$(call print_info,Installing dependencies...)
-	pip install -r requirements-dev.txt
+	test -d $(VENV) || python3 -m venv $(VENV)
+	$(PIP) install -r requirements-dev.txt
 	@$(call print_success,Dependencies installed.)
 
 .PHONY: format
-format:	##H @Dev Format code with Black and Ruff
+format: _venv	##H @Dev Format code with Black, Ruff, and isort
 	@$(call print_info,Formatting code...)
-	black .
-	ruff check --fix .
+	$(VENV)/bin/isort .
+	$(VENV)/bin/black .
+	$(VENV)/bin/ruff check --fix .
 	@$(call print_success,Formatting complete.)
 
 .PHONY: lint
-lint:	##H @Dev Lint scripts (Ruff & Black check)
+lint: _venv	##H @Dev Lint scripts (Ruff, Black, isort check)
 	@$(call print_info,Linting code...)
 	@# Shellcheck
-	@if command -v shellcheck >/dev/null; then \
-		echo "Running shellcheck..."; \
-		shellcheck scripts/*.sh || true; \
-	else \
-		echo "shellcheck not found, skipping."; \
-	fi
+	shellcheck scripts/*.sh
+	@# isort check
+	$(VENV)/bin/isort --check-only --diff .
 	@# Black check
-	@if command -v black >/dev/null; then \
-		echo "Checking black formatting..."; \
-		black --check . || exit 1; \
-	else \
-		echo "black not found. Run 'make deps'"; \
-		exit 1; \
-	fi
+	$(VENV)/bin/black --check .
 	@# Ruff check
-	@if command -v ruff >/dev/null; then \
-		echo "Running ruff..."; \
-		ruff check . || exit 1; \
-	else \
-		echo "ruff not found. Run 'make deps'"; \
-		exit 1; \
-	fi
+	$(VENV)/bin/ruff check .
 	@$(call print_success,Linting complete.)
 
 

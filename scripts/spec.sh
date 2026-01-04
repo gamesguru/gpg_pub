@@ -1,7 +1,7 @@
 #!/bin/bash
 
 # Change to script's directory
-cd "$(dirname "$0")"
+cd "$(dirname "$0")" || exit
 
 # Function definitions
 function check_matchnumber() {
@@ -41,7 +41,7 @@ while true; do
 	# The line with full fingerprint starts with spaces, then the hex string.
 	# Example:       A446DAEF9AEE656EF1F2D904D0260560942BE3D2
 	# Regex: search for spaces, then L, then 39 hex chars.
-	MATCH_2="$(echo "$KEY_OUTPUT" | grep -E "^\s+$L[A-F0-9]{39}$" | cut -c 7-16)"
+	MATCH_2="$(echo "$KEY_OUTPUT" | grep -E "^\s+${L}[A-F0-9]{39}$" | cut -c 7-16)"
 	
 	if [ -n "$MATCH_1" ] || [ -n "$MATCH_2" ]; then
 		set -x
