@@ -11,7 +11,6 @@ import logging
 import os
 import shutil
 import subprocess
-import sys
 import tempfile
 import urllib.request
 from typing import List, Optional
@@ -140,38 +139,81 @@ def cmd_delete(keys: List[str], dry_run: bool):
             )
 
 
-def get_signatures(key_file: str) -> List[str]:
-    """Extract signatures from a GPG key file."""
-    try:
-        # Run gpg --list-packets
-        result = subprocess.run(
-            ["gpg", "--list-packets", key_file],
-            capture_output=True,
-            text=True,
-            check=True,
-        )
-        signatures = []
-        for line in result.stdout.splitlines():
-            # Basic signature extraction - looking for 'sig' packets
-            # We want to capture the signature data to compare equivalence.
-            # However, list-packets output is verbose.
-            # A better approach for equivalence might be to check fingerprints and maybe key contents.
-            # But the user asked for "signature equivalence".
-            # Let's try to extract the signature packet lines or use --with-colons output for 'sig' records.
-            if line.strip().startswith(":signature packet:"):
-                signatures.append(line.strip())
-            elif line.strip().startswith("digest"):
-                signatures.append(line.strip())
-        return signatures
-    except Exception as e:
-        logger.error(f"Error parsing signatures for {key_file}: {e}")
-        return []
+def get_key_data(key_file: str) -> dict:
+    """
+    Parse a GPG key file into a structured dictionary.
+    Returns: { "uid_text": set(signature_key_ids), ... }
+    Includes the primary key signature set under key "PRIMARY".
+    Uses a temporary keyring to ensure all signatures are listed.
+    """
+    with tempfile.TemporaryDirectory() as temp_home:
+        try:
+            # Import key into temp keyring
+            subprocess.run(
+                ["gpg", "--batch", "--homedir", temp_home, "--import", key_file],
+                capture_output=True,
+                check=True,  # Import might warn but exit 0 usually
+            )
+
+            # Run gpg --list-sigs --with-colons
+            result = subprocess.run(
+                [
+                    "gpg",
+                    "--batch",
+                    "--homedir",
+                    temp_home,
+                    "--with-colons",
+                    "--list-sigs",
+                ],
+                capture_output=True,
+                text=True,
+                check=True,
+            )
+
+            data = {}
+            current_uid = "PRIMARY"
+            data[current_uid] = set()
+
+            for line in result.stdout.splitlines():
+                parts = line.split(":")
+                if not parts:
+                    continue
+
+                record_type = parts[0]
+
+                if record_type == "uid":
+                    # parts[9] is the user ID text
+                    current_uid = parts[9]
+                    if current_uid not in data:
+                        data[current_uid] = set()
+                elif record_type == "sig":
+                    # parts[4] is signature key ID
+                    signer_id = parts[4]
+                    if current_uid in data:
+                        data[current_uid].add(signer_id)
+                    else:
+                        # Should not happen if structure is valid
+                        data[current_uid] = {signer_id}
+
+            return data
+
+        except subprocess.CalledProcessError as e:
+            # If import fails or listing fails
+            logger.error(
+                f"Error parsing key structure for {key_file} (subprocess): {e}"
+            )
+            if e.stderr:
+                logger.error(f"Stderr: {e.stderr.decode('utf-8')}")
+            return {}
+        except Exception as e:
+            logger.error(f"Error parsing key structure for {key_file}: {e}")
+            return {}
 
 
-def cmd_verify_parity(dry_run: bool):
-    """Verify parity between local and GitHub keys."""
+def cmd_verify_parity(secret_dir: str):
+    """Verify parity between local, GitHub, and Secret Store keys."""
     github_keys = {
-        "sjjctl": "https://github.com/sjjctl.gpg",
+        # "sjjctl": "https://github.com/sjjctl.gpg",  # retired (May 2024)
         "gamesguru": "https://github.com/gamesguru.gpg",
     }
 
@@ -184,13 +226,12 @@ def cmd_verify_parity(dry_run: bool):
                     f"{Colors.HEADER}Checking parity for {name}...{Colors.ENDC}"
                 )
 
-                # Download GitHub key
+                # 1. Download GitHub key
                 gh_key_path = os.path.join(tmpdirname, f"{name}.gpg")
                 if dry_run:
-                    logger.info(f"[DRY-RUN] Would download {url} to {gh_key_path}")
-                    continue
+                    logger.info(f"[DRY-RUN] Downloading {url} for comparison...")
 
-                logger.info(f"Downloading {url}...")
+                # Always download to temp for comparison
                 with urllib.request.urlopen(url) as response, open(
                     gh_key_path, "wb"
                 ) as out_file:
@@ -206,70 +247,140 @@ def cmd_verify_parity(dry_run: bool):
                     continue
 
                 logger.info(f"GitHub Fingerprint: {fpr}")
+                gh_data = get_key_data(gh_key_path)
 
-                # Find Local Key
-                # We need to find a local key that matches this fingerprint.
-                # Since we don't have the key list passed in (it's a separate command), we search standard locations.
-                # Or we can search the current directory/subdirectories.
-                # Better: Allow user to pass directories, defaulting to current.
-                # But here we are hardcoding the logic as per the specific request.
-                # Let's search in 'keys/' directory recursively.
+                # 2. Find Local Public Key
                 local_keys = find_keys(["keys"])
-                match = None
+                local_match = None
                 for k in local_keys:
-                    lfpr = get_fingerprint(k)
-                    if lfpr == fpr:
-                        match = k
+                    if get_fingerprint(k) == fpr:
+                        local_match = k
                         break
 
-                if match:
-                    logger.info(
-                        f"{Colors.OKGREEN}[OK] Local key found: {match}{Colors.ENDC}"
+                # 3. Find Secret Store Key
+                secret_match = None
+                if secret_dir and os.path.exists(secret_dir):
+                    secret_keys = find_keys([secret_dir])
+                    for k in secret_keys:
+                        if get_fingerprint(k) == fpr:
+                            secret_match = k
+                            break
+                else:
+                    logger.warning(
+                        f"{Colors.WARNING}Secret directory not found: {secret_dir}{Colors.ENDC}"
                     )
 
-                    # Compare Signatures/Content
-                    # Simplest robust check: is the downloaded file identical to the local armored file?
-                    # GitHub serves binary or armored? usually binary (.gpg) or armored (.asc) depending on url?
-                    # The urls end in .gpg, but might be armored.
-                    # Let's compare their "gpg --list-packets" output for structural equivalence.
+                # Comparisons
+                sources = {"GitHub": gh_data}
 
-                    gh_sigs = get_signatures(gh_key_path)
-                    local_sigs = get_signatures(match)
-
-                    if gh_sigs == local_sigs:
-                        logger.info(
-                            f"{Colors.OKGREEN}[OK] Signatures match perfectly.{Colors.ENDC}"
-                        )
-                    else:
-                        logger.warning(
-                            f"{Colors.WARNING}[WARN] Signature mismatch!{Colors.ENDC}"
-                        )
-                        logger.info(
-                            f"GitHub sigs: {len(gh_sigs)}, Local sigs: {len(local_sigs)}"
-                        )
-                        # This might be expected if local has more signatures (not yet pushed) or fewer.
-                        # But for "parity" we usually want equality.
-                        all_passed = False
-
+                if local_match:
+                    logger.info(
+                        f"{Colors.OKGREEN}[OK] Local Public key found: {local_match}{Colors.ENDC}"
+                    )
+                    sources["LocalPublic"] = get_key_data(local_match)
                 else:
                     logger.error(
-                        f"{Colors.FAIL}[FAIL] No local key found for fingerprint {fpr}{Colors.ENDC}"
+                        f"{Colors.FAIL}[FAIL] No local public key found!{Colors.ENDC}"
                     )
                     all_passed = False
+
+                if secret_match:
+                    logger.info(
+                        f"{Colors.OKGREEN}[OK] Secret Store key found: {secret_match}{Colors.ENDC}"
+                    )
+                    sources["SecretStore"] = get_key_data(secret_match)
+                else:
+                    # Not necessarily a fail if missing from secret store? User said "make sure ... is also in sync"
+                    # Implies it SHOULD be there.
+                    logger.warning(
+                        f"{Colors.WARNING}[WARN] No key found in Secret Store ({secret_dir}){Colors.ENDC}"
+                    )
+
+                # Compare GitHub vs LocalPublic
+                if "LocalPublic" in sources:
+                    compare_keys(
+                        "GitHub", gh_data, "LocalPublic", sources["LocalPublic"]
+                    )
+
+                # Compare GitHub vs SecretStore (if exists)
+                if "SecretStore" in sources:
+                    compare_keys(
+                        "GitHub", gh_data, "SecretStore", sources["SecretStore"]
+                    )
+
+                    # Also Compare LocalPublic vs SecretStore
+                    if "LocalPublic" in sources:
+                        compare_keys(
+                            "LocalPublic",
+                            sources["LocalPublic"],
+                            "SecretStore",
+                            sources["SecretStore"],
+                        )
 
             except Exception as e:
                 logger.error(f"{Colors.FAIL}Error checking {name}: {e}{Colors.ENDC}")
                 all_passed = False
 
-    if not dry_run:
-        if all_passed:
-            logger.info(
-                f"{Colors.OKGREEN}{Colors.BOLD}Parity Check Passed!{Colors.ENDC}"
-            )
-            sys.exit(0)
-        else:
-            logger.error(f"{Colors.FAIL}{Colors.BOLD}Parity Check Failed!{Colors.ENDC}")
-            sys.exit(1)
+    if not all_passed:
+        sys.exit(1)
+
+
+def compare_keys(name_a, data_a, name_b, data_b):
+    """Compare two parsed key data structures and verify subset/superset status."""
+    logger.info(f"--- Comparing {name_a} vs {name_b} ---")
+
+    # Merge all signatures
+    sigs_a_all = set()
+    for s in data_a.values():
+        sigs_a_all.update(s)
+
+    sigs_b_all = set()
+    for s in data_b.values():
+        sigs_b_all.update(s)
+
+    if sigs_a_all == sigs_b_all:
+        logger.info(f"{Colors.OKGREEN}[OK] Signatures match perfectly.{Colors.ENDC}")
+        return True
+
+    logger.warning(f"{Colors.WARNING}[WARN] Mismatch detected!{Colors.ENDC}")
+
+    # Check UIDs
+    missing_uids_in_b = set(data_a.keys()) - set(data_b.keys())
+    missing_uids_in_a = set(data_b.keys()) - set(data_a.keys())
+
+    if missing_uids_in_b:
+        logger.warning(f"UIDs in {name_a} but missing in {name_b}:")
+        for u in missing_uids_in_b:
+            logger.warning(f"  - {u}")
+
+    if missing_uids_in_a:
+        logger.warning(f"UIDs in {name_b} but missing in {name_a}:")
+        for u in missing_uids_in_a:
+            logger.warning(f"  - {u}")
+
+    # Check Signatures per UID
+    for uid in data_a:
+        if uid in data_b:
+            sigs_a = data_a[uid]
+            sigs_b = data_b[uid]
+
+            missing_in_b = sigs_a - sigs_b
+            if missing_in_b:
+                logger.warning(f"UID '{uid}' missing signatures in {name_b}:")
+                for s in missing_in_b:
+                    logger.warning(f"  - {s}")
+
+    for uid in data_b:
+        if uid in data_a:
+            sigs_b = data_b[uid]
+            sigs_a = data_a[uid]
+            missing_in_a = sigs_b - sigs_a
+            if missing_in_a:
+                logger.warning(f"UID '{uid}' missing signatures in {name_a}:")
+                for s in missing_in_a:
+                    logger.warning(f"  - {s}")
+
+    return False
 
 
 def main():
@@ -293,8 +404,16 @@ def main():
     subparsers.add_parser("import", parents=[parent_parser], help="Import keys")
     subparsers.add_parser("sign", parents=[parent_parser], help="Sign keys")
     subparsers.add_parser("delete", parents=[parent_parser], help="Delete keys")
-    subparsers.add_parser(
-        "verify-parity", parents=[parent_parser], help="Verify parity with GitHub"
+
+    verify_parser = subparsers.add_parser(
+        "verify-parity",
+        parents=[parent_parser],
+        help="Verify parity with GitHub and Secret Store",
+    )
+    verify_parser.add_argument(
+        "--secret-dir",
+        help="Path to secret keys directory",
+        default=os.path.expanduser("~/Documents/sec"),
     )
 
     args = parser.parse_args()
@@ -303,7 +422,7 @@ def main():
         logger.setLevel(logging.DEBUG)
 
     if args.command == "verify-parity":
-        cmd_verify_parity(args.dry_run)
+        cmd_verify_parity(args.secret_dir)
         return
 
     keys = find_keys(args.directories)

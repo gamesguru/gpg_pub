@@ -165,23 +165,25 @@ delete-secret:	##H @GPG Delete a retired secret key
 # ~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
 
 .PHONY: test
-test:	##H @Dev Do a self test using git log --show-signature
-	git log --branches --graph --abbrev-commit --show-signature
-
-.PHONY: check/only-self-sigs
-check/only-self-sigs: ##H @Dev Test local keys and GitHub keys
+test: 	##H @Dev Test local keys and GitHub keys, show git log sigs
 	# Test local keys (in git repository)
 	@for key in $(shell find keys/ -name *.asc); do gpg --import --dry-run $$key; done
 	# Test keys on GitHub GPG store
 	curl https://github.com/sjjctl.gpg | gpg --import --dry-run
 	curl https://github.com/gamesguru.gpg | gpg --import --dry-run
 	@$(call print_success,Check complete.)
+	git --no-pager log -n 20 --branches --graph --abbrev-commit --show-signature
 
 .PHONY: check/parity
 check/parity: _venv ##H @Dev Verify parity between local keys and GitHub keys
 	@$(call print_info,Verifying GitHub key parity...)
 	$(GPG_MANAGER) verify-parity $(ARGS)
 	@$(call print_success,Parity verified.)
+
+.PHONY: sync
+sync: _venv ##H @Dev Check parity with GitHub and Secret Store
+	@$(call print_info,Checking key parity...)
+	$(GPG_MANAGER) verify-parity $(ARGS)
 
 # Virtual Environment
 VENV := .venv
@@ -191,6 +193,8 @@ PIP := $(VENV)/bin/pip
 .PHONY: _venv
 _venv:
 	@test -d $(VENV) || (echo "Virtual environment not found. Run 'make deps'." && exit 1)
+	# test that which python points to the virtual environment
+	@test $(PYTHON) -ef $(VENV)/bin/python3 || (echo "Virtual environment not found. Run 'make deps'." && exit 1)
 
 .PHONY: deps
 deps:	##H @Dev Install dev dependencies
