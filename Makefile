@@ -194,6 +194,8 @@ deps:	##H @Dev Install dev dependencies
 
 .PHONY: format
 format: _venv	##H @Dev Format code with Black, Ruff, and isort
+	@$(call print_info,Shell scripts...)
+	shfmt -w $$(git ls-files '*.sh')
 	@$(call print_info,Formatting code...)
 	$(VENV)/bin/isort .
 	$(VENV)/bin/black .

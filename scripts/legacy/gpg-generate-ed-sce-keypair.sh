@@ -1,5 +1,11 @@
 #!/bin/bash
 
+TMP_DIR=$(mktemp -d)
+trap 'rm -rf "$TMP_DIR"' EXIT
+
+# Change to temp dir to avoid polluting the script directory and permission errors
+cd "$TMP_DIR" || exit
+
 cat <<EOT >batch-cmds
 # %echo Generating an ed25519/cv25519 signing and encryption key-pair
 %no-protection
@@ -21,5 +27,11 @@ Passphrase: ???
 %echo done
 EOT
 
-gpg --batch --gen-key batch-cmds
-gpg --show-key --keyid-format long --with-subkey-fingerprints ed-sce-keypair.pub
+# Redirect stderr to /dev/null to keep output clean, unless debugging
+gpg --batch --gen-key batch-cmds 2>/dev/null || echo "GPG gen-key failed"
+if [ -f ed-sce-keypair.pub ]; then
+	gpg --show-key --keyid-format long --with-subkey-fingerprints ed-sce-keypair.pub
+else
+	echo "Files not found in $TMP_DIR"
+	ls -la
+fi
