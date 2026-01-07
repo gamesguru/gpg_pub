@@ -3,10 +3,12 @@
 NAME="${1:-Shane}"
 EMAIL="${2:-shane@example.com}"
 
-# Create temp dir
+# Create temp dir (no trap - let caller decide to clean up or keep)
 TMP_DIR=$(mktemp -d)
-trap 'rm -rf "$TMP_DIR"' EXIT
 cd "$TMP_DIR" || exit
+
+# Print temp dir path first so caller can access the .pub file if needed
+echo "TMPDIR:$TMP_DIR"
 
 cat <<EOT >batch-cmds
 %no-protection
