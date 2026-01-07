@@ -23,6 +23,7 @@ Expire-Date: 0
 EOT
 
 # Generate the key
+# rm -f master-certify-only.pub
 gpg --batch --gen-key batch-cmds 2>/dev/null
 rm -f batch-cmds
 

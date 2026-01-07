@@ -13,7 +13,9 @@ function check_matchnumber() {
 		done
 
 		echo "Matched spec! DONE!"
-		echo "Saved: master-certify-only.pub"
+		# Explicitly save the key to a unique file to prevent overwriting
+		cp master-certify-only.pub found-key.pub
+		echo "Copied to: found-key.pub"
 		exit
 	fi
 }
