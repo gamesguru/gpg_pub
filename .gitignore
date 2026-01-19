@@ -10,6 +10,7 @@
 batch-cmds
 *.pub
 output.log
+.tmp/
 
 # Python
 __pycache__/

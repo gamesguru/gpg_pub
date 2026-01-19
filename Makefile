@@ -189,7 +189,7 @@ _venv:
 deps:	##H @Dev Install dev dependencies
 	@$(call print_info,Installing dependencies...)
 	test -d $(VENV) || python3 -m venv $(VENV)
-	$(PIP) install -r requirements-dev.txt
+	$(PIP) install --no-user -r requirements-dev.txt
 	@$(call print_success,Dependencies installed.)
 
 .PHONY: format
