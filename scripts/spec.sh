@@ -13,9 +13,22 @@ function check_matchnumber() {
 		done
 
 		echo "Matched spec! DONE!"
-		# Explicitly save the key to a unique file to prevent overwriting
-		cp master-certify-only.pub found-key.pub
-		echo "Copied to: found-key.pub"
+
+		# extract fingerprint from "FPR:..." arg for filename
+		local fpr=""
+		for a in "${@:2}"; do
+			if [[ "$a" == FPR:* ]]; then
+				fpr="${a#FPR:}"
+				break
+			fi
+		done
+
+		# Fallback if logic fails
+		[ -z "$fpr" ] && fpr="unknown-$(date +%s)"
+
+		local out_file="found-key-${fpr}.pub"
+		cp master-certify-only.pub "$out_file"
+		echo "Copied to: $out_file"
 		exit
 	fi
 }
@@ -26,14 +39,14 @@ while true; do
 	sleep 0.1
 
 	# SPEC: FPR starts with 00, Subkey ID starts with 00
-	FPR_PFX="00"
-	SUBKEY_PFX="00"
+	FPR_PFX="0"
+	SUBKEY_PFX="0"
 
 	# Clean output: remove spaces to handle space-separated fingerprints
 	CLEAN_OUTPUT="$(echo "$KEY_OUTPUT" | tr -d ' ')"
 
 	# Find fingerprint: Look for 40-char hex string starting with 00
-	MATCH_1="$(echo "$CLEAN_OUTPUT" | grep -oE "${FPR_PFX}[A-F0-9]{38}" | head -n1)"
+	MATCH_1="$(echo "$CLEAN_OUTPUT" | grep -oE "${FPR_PFX}[A-F0-9]{39}" | head -n1)"
 
 	# Find subkey ID: Look for cv25519/00...
 	MATCH_2="$(echo "$CLEAN_OUTPUT" | grep -oE "cv25519/${SUBKEY_PFX}[A-F0-9]+" | cut -d/ -f2 | head -n1)"
