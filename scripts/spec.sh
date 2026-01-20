@@ -32,9 +32,13 @@ function check_matchnumber() {
 		# Fallback if logic fails
 		[ -z "$fpr" ] && fpr="unknown-$(date +%s)"
 
-		local out_base="found-key-${fpr}"
+		# Output directory
+		local output_dir="../.tmp"
+		mkdir -p "$output_dir"
+
+		local out_base="${output_dir}/found-key-${fpr}"
 		local pub_file="${out_base}.pub"
-		local sec_file="${out_base}.sec"
+		local asc_file="${out_base}.asc"
 
 		# Copy public key
 		if [ -f "$tmp_dir/master-certify-only.pub" ]; then
@@ -45,11 +49,20 @@ function check_matchnumber() {
 		fi
 
 		# Export secret key (Heavy lifting only on match!)
+		# Export secret key (Heavy lifting only on match!)
 		if [ -d "$tmp_dir/.gnupg" ]; then
-			# We know the name is Shane from generation script, or just export all (there's only one)
+			# Since we used %pubring, the key isn't in the DB. Import it first to link with secret key.
+			gpg --homedir "$tmp_dir/.gnupg" --batch --import "$tmp_dir/master-certify-only.pub" >/dev/null 2>&1
+
+			# Create a combined ASCII armored file (Public + Secret)
+			# Export public key properly as ASCII armor (since original is binary)
 			gpg --homedir "$tmp_dir/.gnupg" --batch --pinentry-mode loopback \
-				--export-secret-keys --armor >"$sec_file"
-			echo "Saved secret key: $sec_file"
+				--export --armor >"$asc_file"
+
+			# Append ALL secret keys in the temp homedir
+			gpg --homedir "$tmp_dir/.gnupg" --batch --pinentry-mode loopback \
+				--export-secret-keys --armor >>"$asc_file"
+			echo "Saved unified key: $asc_file"
 		else
 			echo "ERROR: GPG home not found in $tmp_dir"
 		fi
@@ -63,34 +76,26 @@ function check_matchnumber() {
 }
 
 # Main loop
+# Use the same fixed temp dir as the generator script
+TMP_DIR="/tmp/gpg-gen-search-$USER"
+
 while true; do
 	KEY_OUTPUT=$(./gpg-generate-certify-only-master.sh)
-
-	# Extract TMPDIR from first line (e.g. TMPDIR:/tmp/gpg-gen-...)
-	TMP_DIR=$(echo "$KEY_OUTPUT" | grep -oP '^TMPDIR:\K.*')
-
-	# SPEC: FPR starts with 00, Subkey ID starts with 00
-	FPR_PFX="0"
-	SUBKEY_PFX="0"
 
 	# Clean output: remove spaces to handle space-separated fingerprints
 	CLEAN_OUTPUT="$(echo "$KEY_OUTPUT" | tr -d ' ')"
 
-	# Find fingerprint: Look for 40-char hex string starting with 00
-	MATCH_1="$(echo "$CLEAN_OUTPUT" | grep -oE "${FPR_PFX}[A-F0-9]{39}" | head -n1)"
+	# Find fingerprint:
+	# 1. Starts with 0 (Prefix)
+	# 2. Key ID (last 16 chars, i.e., char 24) starts with 0
+	# Regex: 0 (1) + 23 chars + 0 (1) + 15 chars = 40 chars
+	MATCH_1="$(echo "$CLEAN_OUTPUT" | grep -oE "0[A-F0-9]{23}0[A-F0-9]{15}" | head -n1)"
 
-	# Find subkey ID: Look for cv25519/00...
-	MATCH_2="$(echo "$CLEAN_OUTPUT" | grep -oE "cv25519/${SUBKEY_PFX}[A-F0-9]+" | cut -d/ -f2 | head -n1)"
-
-	if [ -n "$MATCH_1" ] || [ -n "$MATCH_2" ]; then
+	if [ -n "$MATCH_1" ]; then
 		# Add labels for clarity
 		M1="${MATCH_1:+FPR:$MATCH_1}"
-		M2="${MATCH_2:+SUB:$MATCH_2}"
 
-		# Pass matched parts and TMP_DIR to handler
-		check_matchnumber "$TMP_DIR" 2 "$M1" "$M2"
-	else
-		# No match: clean up temp dir immediately
-		[ -n "$TMP_DIR" ] && rm -rf "$TMP_DIR"
+		# Pass matched parts and fixed TMP_DIR to handler
+		check_matchnumber "$TMP_DIR" 1 "$M1"
 	fi
 done
