@@ -94,6 +94,5 @@ while true; do
 
 		# Pass matched parts and fixed TMP_DIR to handler
 		check_matchnumber "$TMP_DIR" 1 "$M1"
-	f
-fi
+	fi
 done
